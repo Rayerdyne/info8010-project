@@ -19,10 +19,10 @@
 
 The music signal will go through the following steps:
 1. CNN layers, as proposed in [1] and [2] as well. 
-   To be precised and tuned for best results.
+   ResNet34 pre-trained model, but not the last layers (last convolution and dense layer)
    - Input: tensor (image)
    - Output: tensor, time-dependent and high-dimensional representation of input-sequence
-1. RNN / transformers / attention layers, that is, deep learning tools for efficient manipulation of sequential data.
+1. LSTM, that is, a deep learning tools for efficient manipulation of sequential data.
    To be precised and tuned for best results.
    - Output: tensor, time-independent and low(er)-dimentional representation
 1. Fully connected layers "finish the work" of the previous layers.
