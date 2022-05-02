@@ -1,0 +1,9 @@
+ipynb==0.5.1
+ipywidgets==7.7.0
+librosa==0.9.1
+matplotlib==3.5.1
+notebook==6.4.10
+numpy==1.21.0
+torch==1.11.0
+torchaudio==0.11.0
+torchvision==0.12.0
