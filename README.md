@@ -11,9 +11,16 @@
 
 **Pre-processing**:
 
-1. Mel-spectrogram, following the example of [1] and [2].
+1. Mel-spectrograms, following the example of [1] and [2]. To benefit from [7], three are performed and stacked.
    - Input: waveform
-   - Output: tensor (image)
+   - Output: tensor (3-channel image)
+
+1. Data augmentation: spectrogram being kind of images, we can simply take advantage of image transforms !
+
+We will randomly apply following transformations:
+   - Random color jitter
+   - Gaussian Blur
+   - Random erasing (cf [8])
 
 **Encoder**:
 
@@ -46,3 +53,4 @@ By simplicity, we will simply consider the inverse steps of the encoder.
 - [5] [MusicVAE on GitHub](https://github.com/Variational-Autoencoder/MusicVAE)
 - [6] [GTZAN dataset](http://marsyas.info/downloads/datasets.html)
 - [7] [Rethinking CNN Models for Audio Classification](https://arxiv.org/pdf/2007.11154.pdf)
+- [8] [Random Erasing Data Augmentation](https://doi.org/10.48550/arXiv.1708.04896)
