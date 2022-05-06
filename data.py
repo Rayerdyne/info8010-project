@@ -63,13 +63,9 @@ class MelSpectrogram(object):
         # tensor, with channel dimension being always 1 -> squeeze it
         out = []
         for spec in self.spectrograms:
-            print(f"1 -> {x.shape}")
             y = spec(x)
-            print(f"2 -> {y.shape}")
             y = self.resize(y)
-            print(f"3 -> {y.shape}")
             y = y.squeeze(0)
-            print(f"4 -> {y.shape}")
             out.append(y)
         return torch.stack(out)
 
@@ -107,14 +103,9 @@ class InverseMelSpectrogramSlow(object):
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         out = []
         for resize, inverse, spec in zip(self.resizes, self.inverses, x):
-            print(resize)
-            print(f" A -> {spec.shape}")
             y = spec.unsqueeze(0)
-            print(f" B -> {y.shape}")
             y = resize(y)
-            print(f" C -> {y.shape}")
             y = inverse(y)
-            print(f" D -> {y.shape}")
 
             out.append(y)
         
@@ -230,15 +221,15 @@ class SpecDataset(data.Dataset):
         return len(self.audio_ds)
     
     def __getitem__(self, index):
-        name = join(self.spec_dir, SPEC_NAME) + str(index) + ".pt"
+        name = join(self.spec_dir, SPEC_NAME) + str(index) + ".spec.pt"
 
         if isfile(name):
-            out = torch.load(name)
+            (out, genre) = torch.load(name)
         else:
             waveform, _sr, genre = self.audio_ds[index]
             out = self.spectrogram(waveform)
             if self.save:
-                torch.save(out, name)
+                torch.save((out, genre), name)
         
         if self.transform is not None:
             out = self.transform(out)
