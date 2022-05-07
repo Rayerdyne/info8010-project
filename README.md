@@ -11,6 +11,8 @@
 
 **Pre-processing**:
 
+1. Cropping, to start of a sequence of a compatible lenght for the computation. (zero-padding is avoided, as it would add artificial abrupt, unwanted ending to the music)
+
 1. Mel-spectrograms, following the example of [1] and [2]. To benefit from [7], three are performed and stacked.
    - Input: waveform
    - Output: tensor (3-channel image)

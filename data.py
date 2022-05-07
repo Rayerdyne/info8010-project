@@ -1,6 +1,6 @@
 # This file contains all the stuff to pre-compute the spectrograms and load/save them.
 
-from typing import List
+from typing import List, Tuple
 import torch
 import torch.utils.data as data
 
@@ -18,7 +18,9 @@ SPEC_NAME = "spec_"
 GTZAN_SAMPLING_RATE: int = 22050
 SAMPLING_RATE: int = 12000      # 12 kHz
 
-SEQUENCE_DURATION: int = 20      # s
+SEQUENCE_DURATIONS: Tuple[int, int] = (20, 28)      # s
+MAX_AUDIO_LENGTH: int = 345600                      # s
+MAX_AUDIO_LENGTH_GTZAN: int = int(MAX_AUDIO_LENGTH * GTZAN_SAMPLING_RATE / SAMPLING_RATE)
 
 # Spectrogram hyper-parameters
 N_FFT: int = 2048                      # samples
@@ -42,10 +44,8 @@ class MelSpectrogram(object):
         win_lengths: List[int] = WIN_LENGTHS,
         hop_lengths: List[int] = HOP_LENGTHS,
         n_mels: int = N_MELS,
-        spec_length: int = SPEC_LENGTH,
         normalized: bool = True,
     ):
-        self.resize = imgtransforms.Resize((n_mels, spec_length))
         self.spectrograms = [
             audiotransforms.MelSpectrogram(
                 sample_rate=sample_rate,
@@ -57,14 +57,18 @@ class MelSpectrogram(object):
             )
             for win_length, hop_length in zip(win_lengths, hop_lengths)
         ]
+        self.n_mels = n_mels
     
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         # squeeze needed because MelSpectrogram returns: (channel, n_mels, time)
         # tensor, with channel dimension being always 1 -> squeeze it
         out = []
+        mid_size = int(x.shape[-1] / HOP_LENGTHS[1] + 1)
+        print(f"x.shape: {x.shape} -> {mid_size}")
+        resize = imgtransforms.Resize((self.n_mels, mid_size))
         for spec in self.spectrograms:
             y = spec(x)
-            y = self.resize(y)
+            y = resize(y)
             y = y.squeeze(0)
             out.append(y)
         return torch.stack(out)
@@ -73,7 +77,7 @@ class InverseMelSpectrogramSlow(object):
     """Frickin' slow"""
     def __init__(
         self,
-        sequence_duration: int = SEQUENCE_DURATION,
+        sequence_duration: int = SEQUENCE_DURATIONS[0],
         sample_rate: int = SAMPLING_RATE,
         n_fft: int = N_FFT,
         win_lengths: List[int] = WIN_LENGTHS,
@@ -117,7 +121,6 @@ class InverseMelSpectrogramSlow(object):
 class InverseMelSpectrogram(object):
     def __init__(
         self,
-        sequence_duration: int = SEQUENCE_DURATION,
         sample_rate: int = SAMPLING_RATE,
         n_fft: int = N_FFT,
         win_lengths: List[int] = WIN_LENGTHS,
@@ -129,17 +132,15 @@ class InverseMelSpectrogram(object):
         self.win_lengths = win_lengths
         self.hop_lengths = hop_lengths
         self.n_mels = n_mels
-
-        sizes = [int((sequence_duration * sample_rate / x) + 1) for x in hop_lengths]
-        self.resizes = [
-            imgtransforms.Resize((n_mels, size)) for size in sizes
-        ]
     
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        spec_length = x.shape[-1]
+        print(f"spec length: {spec_length}")
+        sizes = [int(((spec_length - 1) * HOP_LENGTHS[1]) / HOP_LENGTHS[i] + 1) for i in range(3)]
+        resizes = [ imgtransforms.Resize((self.n_mels, size)) for size in sizes ]
         recs = []
         for i in range(3):
-            y = self.resizes[i](x[i].unsqueeze(0))
-            print(f"shape of librosa input: {y.shape}")
+            y = resizes[i](x[i].unsqueeze(0))
             rec = mel_to_audio(
                 y.numpy(),
                 sr = self.sr,
@@ -156,7 +157,6 @@ class AudioDataset(data.Dataset):
     def __init__(
         self,
         root_dir: str,
-        sequence_duration: int = SEQUENCE_DURATION,
         sampling_rate: int = SAMPLING_RATE,
         subset=None,
         download: bool = False
@@ -165,7 +165,7 @@ class AudioDataset(data.Dataset):
 
         self.gtzan = audiodatasets.GTZAN(root_dir, subset=subset, download=download)
         self.transform = imgtransforms.Compose([
-            imgtransforms.RandomCrop((1, sequence_duration * GTZAN_SAMPLING_RATE)),
+            imgtransforms.CenterCrop((1, MAX_AUDIO_LENGTH_GTZAN)),
             audiotransforms.Resample(GTZAN_SAMPLING_RATE, sampling_rate),
         ])
         self.sampling_rate = sampling_rate
@@ -183,7 +183,6 @@ class SpecDataset(data.Dataset):
     def __init__(
         self,
         root_dir: str,
-        sequence_duration: int = SEQUENCE_DURATION,
         sampling_rate: int = SAMPLING_RATE,
         transform=None,
         subset=None,
@@ -198,7 +197,6 @@ class SpecDataset(data.Dataset):
 
         self.audio_ds = AudioDataset(
             root_dir,
-            sequence_duration,
             sampling_rate,
             subset,
             download
@@ -210,7 +208,6 @@ class SpecDataset(data.Dataset):
             WIN_LENGTHS,
             HOP_LENGTHS,
             N_MELS,
-            SPEC_LENGTH,
             NORMALIZE
         )
 
@@ -256,20 +253,20 @@ class OldDataset(data.Dataset):
 
 
 def main():
-    audio_ds = SpecDataset("./data/gtzan", save=False)
-    audio_loader = data.DataLoader(
-        audio_ds,
+    ds = SpecDataset("./data/gtzan", save=False)
+    loader = data.DataLoader(
+        ds,
         batch_size=1,
         shuffle=False,
         num_workers=1
     )
 
-    length = len(audio_loader)
-    for i, spec in enumerate(audio_loader):
+    length = len(loader)
+    for i, spec in enumerate(loader):
         print(f"{i} / {length}")
 
 
-def test():
+def test_spectrogram_inverse():
     spec_ds = SpecDataset("./data/gtzan", save=False)
     spec, genre = spec_ds[0]
 
@@ -277,5 +274,38 @@ def test():
     rec = inverse(spec)
     print(f"rect: {rec.shape}")
 
+def test_variable_length():
+    ds = SpecDataset("./data/gtzan", save=False)
+    u = ds[0]
+    print(f"u.shape: {u[0].shape}")
+    spec = audiotransforms.MelSpectrogram(
+        sample_rate=SAMPLING_RATE,
+        n_fft=N_FFT,
+        hop_length=HOP_LENGTHS[0],
+        win_length=WIN_LENGTHS[0],
+        n_mels=N_MELS,
+        normalized=NORMALIZE
+    )
+    for i in range(1000 + HOP_LENGTHS[0], 1000 + 3*HOP_LENGTHS[0]+1):
+        xt = torch.randn(1, i)
+        xf = spec(xt)
+        print(f"{xt.shape[-1]} -> {xf.shape[-1]} ({xt.shape[-1] // HOP_LENGTHS[0] + 1})")
+        # audio length -> spec length
+        # 1199         -> 10
+        # 1200         -> 11
+        # 1319         -> 11
+        # 1320         -> 12
+
+def test_cropping_lengths():
+    a = 3
+    b = 10
+    for i in range(100):
+        print(f"{i}) {i // b + 1}, {(i // b + 1) / a}", end="")
+        if i % (a * b) < b:
+            print(f" OK ({i - i % (a*b)})")
+        else:
+            print(f" crop at {(a*b) * (i // (a*b))}")
+
 if __name__ == "__main__":
-    main()
+    test_spectrogram_inverse()
+    # main()
