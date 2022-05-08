@@ -64,7 +64,6 @@ class MelSpectrogram(object):
         # tensor, with channel dimension being always 1 -> squeeze it
         out = []
         mid_size = int(x.shape[-1] / HOP_LENGTHS[1] + 1)
-        print(f"x.shape: {x.shape} -> {mid_size}")
         resize = imgtransforms.Resize((self.n_mels, mid_size))
         for spec in self.spectrograms:
             y = spec(x)
